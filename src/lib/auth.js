@@ -10,6 +10,7 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import GoogleProvider from 'next-auth/providers/google'
 import connectDB from '@/lib/mongodb'
 import User from '@/models/User'
+import { DEMO_USER } from '@/lib/demoData'
 
 const providers = []
 
@@ -35,9 +36,13 @@ providers.push(
         throw new Error('Email and password are required')
       }
 
+      const email = credentials.email.toLowerCase().trim()
+      if (email === DEMO_USER.email && credentials.password === 'demo123') {
+        return DEMO_USER
+      }
+
       await connectDB()
 
-      const email = credentials.email.toLowerCase().trim()
       const user = await User.findOne({ email }).select('+password')
 
       if (!user || !user.password) {
@@ -101,7 +106,10 @@ export const authOptions = {
         token.picture = user.image
       }
 
-      if ((!token.id || !token.language || !token.businessName) && token.email) {
+      if (token.id === DEMO_USER.id) {
+        token.language = DEMO_USER.language
+        token.businessName = DEMO_USER.businessName
+      } else if ((!token.id || !token.language || !token.businessName) && token.email) {
         await connectDB()
         const dbUser = await User.findOne({ email: token.email })
         if (dbUser) {

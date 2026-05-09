@@ -51,11 +51,11 @@ body {
 
 @layer components {
   .font-display {
-    font-family: var(--font-space-grotesk), sans-serif;
+    font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   }
 
   .font-body {
-    font-family: var(--font-manrope), sans-serif;
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
   }
 
   .glass-card {

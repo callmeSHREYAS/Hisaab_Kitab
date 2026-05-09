@@ -71,7 +71,16 @@ export default function WhatsAppPage() {
       const data = await res.json()
 
       if (res.ok) {
-        setResult({ success: true, message: 'WhatsApp reminder sent successfully.' })
+        if (data.whatsappUrl) {
+          window.open(data.whatsappUrl, '_blank', 'noopener,noreferrer')
+        }
+        setResult({
+          success: true,
+          message:
+            data.transport === 'whatsapp_web'
+              ? 'WhatsApp opened with your reminder. Review it and press send.'
+              : 'WhatsApp reminder sent successfully.',
+        })
       } else {
         setResult({ success: false, message: data.error || 'Failed to send message' })
       }

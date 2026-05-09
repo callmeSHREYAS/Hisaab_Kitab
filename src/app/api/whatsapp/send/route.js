@@ -13,8 +13,31 @@ import Customer from '@/models/Customer'
 import User from '@/models/User'
 import { TEMPLATES, fillTemplate } from '@/lib/whatsappTemplates'
 import twilio from 'twilio'
+import { DEMO_USER, getDemoCustomer, isDemoUser } from '@/lib/demoData'
+
+export const dynamic = 'force-dynamic'
+
+function normalizePhoneForWhatsApp(phone) {
+  return String(phone || '').replace(/[^\d]/g, '')
+}
+
+function getWhatsAppWebUrl(phone, message) {
+  const number = normalizePhoneForWhatsApp(phone)
+  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`
+}
+
+function twilioReady() {
+  return Boolean(
+    process.env.TWILIO_ACCOUNT_SID &&
+      process.env.TWILIO_AUTH_TOKEN &&
+      process.env.TWILIO_WHATSAPP_NUMBER
+  )
+}
 
 export async function POST(request) {
+  let fallbackUrl = ''
+  let previewMessage = ''
+
   try {
     const session = await getServerSession(authOptions)
     if (!session) {
@@ -23,20 +46,28 @@ export async function POST(request) {
 
     const { customerId, templateId, language } = await request.json()
 
-    await connectDB()
+    let customer
+    let owner
 
-    // Fetch customer and verify they belong to this user
-    const customer = await Customer.findOne({
-      _id: customerId,
-      userId: session.user.id,
-    })
+    if (isDemoUser(session.user.id)) {
+      customer = getDemoCustomer(customerId)
+      owner = DEMO_USER
+    } else {
+      await connectDB()
+
+      // Fetch customer and verify they belong to this user
+      customer = await Customer.findOne({
+        _id: customerId,
+        userId: session.user.id,
+      })
+
+      // Fetch business owner's name
+      owner = await User.findById(session.user.id)
+    }
 
     if (!customer) {
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
     }
-
-    // Fetch business owner's name
-    const owner = await User.findById(session.user.id)
 
     // Find the selected template
     const langTemplates = TEMPLATES[language] || TEMPLATES['en']
@@ -46,8 +77,21 @@ export async function POST(request) {
     const message = fillTemplate(template.message, {
       name: customer.name,
       amount: customer.pendingAmount,
-      business: owner.businessName || session.user.name + "'s Business",
+      business: owner?.businessName || session.user.name + "'s Business",
     })
+
+    previewMessage = message
+    fallbackUrl = getWhatsAppWebUrl(customer.phone, message)
+
+    if (!twilioReady() || isDemoUser(session.user.id)) {
+      return NextResponse.json({
+        success: true,
+        transport: 'whatsapp_web',
+        preview: message,
+        whatsappUrl: fallbackUrl,
+        note: 'Opened WhatsApp Web because Twilio is not available in demo mode.',
+      })
+    }
 
     // --- Send via Twilio ---
     // NOTE: In Twilio sandbox, you must format numbers as "whatsapp:+91XXXXXXXXXX"
@@ -68,6 +112,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
+      transport: 'twilio',
       messageSid: twilioMessage.sid,
       preview: message, // Return the message so frontend can show a preview
     })
@@ -77,6 +122,16 @@ export async function POST(request) {
     // Twilio-specific errors have a code field
     if (error.code === 21211) {
       return NextResponse.json({ error: 'Invalid phone number format' }, { status: 400 })
+    }
+
+    if (fallbackUrl && error.code !== 21211) {
+      return NextResponse.json({
+        success: true,
+        transport: 'whatsapp_web',
+        preview: previewMessage,
+        whatsappUrl: fallbackUrl,
+        note: 'Twilio failed, so WhatsApp Web fallback is ready.',
+      })
     }
 
     return NextResponse.json(

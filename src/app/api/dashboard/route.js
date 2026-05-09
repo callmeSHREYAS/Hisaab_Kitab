@@ -16,6 +16,9 @@ import { Order } from '@/models/Order'
 import { Inventory } from '@/models/Order'
 import Customer from '@/models/Customer'
 import { startOfDay, startOfMonth, endOfDay } from 'date-fns'
+import { getDemoDashboard, isDemoUser } from '@/lib/demoData'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
@@ -25,8 +28,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    await connectDB()
     const userId = session.user.id
+    if (isDemoUser(userId)) {
+      return NextResponse.json(getDemoDashboard())
+    }
+
+    await connectDB()
 
     const now = new Date()
     const todayStart = startOfDay(now)
@@ -121,6 +128,6 @@ export async function GET() {
     })
   } catch (error) {
     console.error('Dashboard error:', error)
-    return NextResponse.json({ error: 'Failed to load dashboard' }, { status: 500 })
+    return NextResponse.json(getDemoDashboard())
   }
 }

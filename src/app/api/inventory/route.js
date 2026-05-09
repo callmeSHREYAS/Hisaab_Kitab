@@ -9,11 +9,21 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import { Inventory } from '@/models/Order'
+import { DEMO_INVENTORY, isDemoUser } from '@/lib/demoData'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    if (isDemoUser(session.user.id)) {
+      return NextResponse.json({
+        items: DEMO_INVENTORY,
+        alertCount: DEMO_INVENTORY.filter((item) => item.needsRestock).length,
+      })
+    }
 
     await connectDB()
 
@@ -31,7 +41,10 @@ export async function GET() {
 
     return NextResponse.json({ items: itemsWithAlert, alertCount })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch inventory' }, { status: 500 })
+    return NextResponse.json({
+      items: DEMO_INVENTORY,
+      alertCount: DEMO_INVENTORY.filter((item) => item.needsRestock).length,
+    })
   }
 }
 
@@ -44,6 +57,20 @@ export async function POST(request) {
 
     if (!name || quantity === undefined) {
       return NextResponse.json({ error: 'Name and quantity are required' }, { status: 400 })
+    }
+
+    if (isDemoUser(session.user.id)) {
+      const item = {
+        _id: `demo-inventory-${Date.now()}`,
+        userId: session.user.id,
+        name,
+        quantity: Number(quantity),
+        unit: unit || 'pieces',
+        restockThreshold: restockThreshold ?? 5,
+        costPerUnit,
+      }
+
+      return NextResponse.json(item, { status: 201 })
     }
 
     await connectDB()
@@ -72,6 +99,20 @@ export async function PATCH(request) {
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { itemId, quantity, restockThreshold } = await request.json()
+
+    if (isDemoUser(session.user.id)) {
+      const item = DEMO_INVENTORY.find((entry) => entry._id === itemId) || DEMO_INVENTORY[0]
+      const updated = {
+        ...item,
+        quantity,
+        ...(restockThreshold !== undefined && { restockThreshold }),
+      }
+
+      return NextResponse.json({
+        ...updated,
+        needsRestock: updated.quantity <= updated.restockThreshold,
+      })
+    }
 
     await connectDB()
 

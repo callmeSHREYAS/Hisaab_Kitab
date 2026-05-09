@@ -9,12 +9,19 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import connectDB from '@/lib/mongodb'
 import Customer from '@/models/Customer'
+import { DEMO_CUSTOMERS, isDemoUser } from '@/lib/demoData'
+
+export const dynamic = 'force-dynamic'
 
 // GET /api/customers
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    if (isDemoUser(session.user.id)) {
+      return NextResponse.json(DEMO_CUSTOMERS)
+    }
 
     await connectDB()
 
@@ -25,7 +32,7 @@ export async function GET() {
 
     return NextResponse.json(customers)
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 })
+    return NextResponse.json(DEMO_CUSTOMERS)
   }
 }
 
@@ -39,6 +46,22 @@ export async function POST(request) {
 
     if (!name || !phone) {
       return NextResponse.json({ error: 'Name and phone are required' }, { status: 400 })
+    }
+
+    if (isDemoUser(session.user.id)) {
+      return NextResponse.json(
+        {
+          _id: `demo-customer-${Date.now()}`,
+          userId: session.user.id,
+          name,
+          phone,
+          pendingAmount: pendingAmount || 0,
+          notes,
+          totalPaid: 0,
+          createdAt: new Date().toISOString(),
+        },
+        { status: 201 }
+      )
     }
 
     await connectDB()
